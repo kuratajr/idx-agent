@@ -230,8 +230,10 @@ func main() {
 
 func run() {
 	auth := model.AuthHandler{
-		ClientSecret: agentConfig.ClientSecret,
-		ClientUUID:   agentConfig.UUID,
+		ClientSecret:   agentConfig.ClientSecret,
+		ClientUUID:     agentConfig.UUID,
+		IDX:            agentConfig.IDX,
+		GCPWorkstation: strings.TrimSpace(agentConfig.GCPWorkstation),
 	}
 
 	// 定时检查更新

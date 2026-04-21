@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,15 +14,19 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"sigs.k8s.io/yaml"
+
+	"github.com/nezhahq/agent/pkg/util"
 )
 
 //go:generate go run gen/gen.go -type=AgentConfig
 type AgentConfig struct {
 	Debug bool `koanf:"debug" json:"debug"`
 
-	Server       string `koanf:"server" json:"server"`               // 服务器地址
-	ClientSecret string `koanf:"client_secret" json:"client_secret"` // 客户端密钥
-	UUID         string `koanf:"uuid" json:"uuid"`
+	Server         string `koanf:"server" json:"server"`               // 服务器地址
+	ClientSecret   string `koanf:"client_secret" json:"client_secret"` // 客户端密钥
+	UUID           string `koanf:"uuid" json:"uuid"`
+	IDX            bool   `koanf:"idx" json:"idx"`
+	GCPWorkstation string `koanf:"gcp_workstation" json:"gcp_workstation,omitempty"`
 
 	HardDrivePartitionAllowlist []string        `koanf:"hard_drive_partition_allowlist" json:"hard_drive_partition_allowlist,omitempty"`
 	NICAllowlist                map[string]bool `koanf:"nic_allowlist" json:"nic_allowlist,omitempty"`
@@ -82,6 +87,15 @@ func (c *AgentConfig) Read(path string) error {
 			defer saveOnce()
 		} else {
 			return fmt.Errorf("generate UUID failed: %v", err)
+		}
+	}
+
+	// If IDX mode is enabled, attempt to discover GCP Workstation full path once
+	// and persist it to config for future startups.
+	if c.IDX && strings.TrimSpace(c.GCPWorkstation) == "" {
+		if fp, err := util.GetGCPWorkstationFullPath(context.Background()); err == nil && fp != "" {
+			c.GCPWorkstation = fp
+			defer saveOnce()
 		}
 	}
 
