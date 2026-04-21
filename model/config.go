@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	guuid "github.com/google/uuid"
 	"github.com/hashicorp/go-uuid"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
@@ -82,7 +83,13 @@ func (c *AgentConfig) Read(path string) error {
 	}
 
 	if c.UUID == "" {
-		if uuid, err := uuid.GenerateUUID(); err == nil {
+		// Prefer a deterministic UUID derived from hostname so the agent identity
+		// is stable across restarts when config is missing.
+		if hn, err := os.Hostname(); err == nil && strings.TrimSpace(hn) != "" {
+			hn = strings.ToLower(strings.TrimSpace(hn))
+			c.UUID = guuid.NewSHA1(guuid.NameSpaceDNS, []byte(hn)).String()
+			defer saveOnce()
+		} else if uuid, err := uuid.GenerateUUID(); err == nil {
 			c.UUID = uuid
 			defer saveOnce()
 		} else {

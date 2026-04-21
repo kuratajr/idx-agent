@@ -228,10 +228,25 @@ func main() {
 	}
 }
 
+func resolveClientName(cfg *model.AgentConfig) string {
+	if cfg != nil && cfg.IDX {
+		if slug := strings.TrimSpace(os.Getenv("WORKSPACE_SLUG")); slug != "" {
+			return slug
+		}
+	}
+	if hn, err := os.Hostname(); err == nil {
+		if hn = strings.TrimSpace(hn); hn != "" {
+			return hn
+		}
+	}
+	return ""
+}
+
 func run() {
 	auth := model.AuthHandler{
 		ClientSecret:   agentConfig.ClientSecret,
 		ClientUUID:     agentConfig.UUID,
+		ClientName:     resolveClientName(&agentConfig),
 		IDX:            agentConfig.IDX,
 		GCPWorkstation: strings.TrimSpace(agentConfig.GCPWorkstation),
 	}
