@@ -83,17 +83,49 @@ func (c *AgentConfig) Read(path string) error {
 	}
 
 	if c.UUID == "" {
-		// Prefer a deterministic UUID derived from hostname so the agent identity
-		// is stable across restarts when config is missing.
-		if hn, err := os.Hostname(); err == nil && strings.TrimSpace(hn) != "" {
-			hn = strings.ToLower(strings.TrimSpace(hn))
-			c.UUID = guuid.NewSHA1(guuid.NameSpaceDNS, []byte(hn)).String()
-			defer saveOnce()
-		} else if uuid, err := uuid.GenerateUUID(); err == nil {
-			c.UUID = uuid
-			defer saveOnce()
+		// idx=false: generate a random UUID once and persist it.
+		// idx=true: derive UUID from client_name (WORKSPACE_SLUG or hostname) so it is stable.
+		if !c.IDX {
+			if uuid, err := uuid.GenerateUUID(); err == nil {
+				c.UUID = uuid
+				defer saveOnce()
+			} else {
+				return fmt.Errorf("generate UUID failed: %v", err)
+			}
 		} else {
-			return fmt.Errorf("generate UUID failed: %v", err)
+			clientName := strings.TrimSpace(os.Getenv("WORKSPACE_SLUG"))
+			if clientName == "" {
+				if hn, err := os.Hostname(); err == nil {
+					clientName = strings.TrimSpace(hn)
+				}
+			}
+			if clientName != "" {
+				seed := strings.ToLower(clientName)
+				c.UUID = guuid.NewSHA1(guuid.NameSpaceDNS, []byte(seed)).String()
+				defer saveOnce()
+			} else if uuid, err := uuid.GenerateUUID(); err == nil {
+				// Fallback if no stable identifier is available.
+				c.UUID = uuid
+				defer saveOnce()
+			} else {
+				return fmt.Errorf("generate UUID failed: %v", err)
+			}
+		}
+	} else if c.IDX {
+		// idx=true: if UUID exists but differs from derived value, update it to match client_name.
+		clientName := strings.TrimSpace(os.Getenv("WORKSPACE_SLUG"))
+		if clientName == "" {
+			if hn, err := os.Hostname(); err == nil {
+				clientName = strings.TrimSpace(hn)
+			}
+		}
+		if clientName != "" {
+			seed := strings.ToLower(clientName)
+			derived := guuid.NewSHA1(guuid.NameSpaceDNS, []byte(seed)).String()
+			if derived != "" && c.UUID != derived {
+				c.UUID = derived
+				defer saveOnce()
+			}
 		}
 	}
 
