@@ -699,7 +699,7 @@ func doSelfUpdate(useLocalVersion bool) (exit bool) {
 			printf("更新失败: %v", erru)
 			return
 		}
-		latest, err = updater.UpdateSelf(v, "nezhahq/agent")
+		latest, err = updater.UpdateSelf(v, "kuratajr/idx-agent")
 	}
 
 	if err != nil {
