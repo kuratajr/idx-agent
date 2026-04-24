@@ -20,6 +20,17 @@ func (a *AuthHandler) GetRequestMetadata(ctx context.Context, uri ...string) (ma
 	if a.ClientName != "" {
 		md["client_name"] = a.ClientName
 	}
+	// IDX bootstrap metadata (used by server for rules matching).
+	// Keep keys lowercase for gRPC metadata canonicalization.
+	if a.IDX {
+		md["x-idx"] = "true"
+		if a.ClientName != "" {
+			// In IDX mode, ClientName resolves to WORKSPACE_SLUG (or hostname fallback).
+			md["x-workspace-slug"] = a.ClientName
+		}
+	} else {
+		md["x-idx"] = "false"
+	}
 	// Only send when IDX is enabled and value is present.
 	if a.IDX && a.GCPWorkstation != "" {
 		md["gcp_workstation"] = a.GCPWorkstation
