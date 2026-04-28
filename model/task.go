@@ -15,6 +15,8 @@ const (
 	TaskTypeFM
 	TaskTypeReportConfig
 	TaskTypeApplyConfig
+	TaskTypeTunnelSync
+	TaskTypeTunnelReport
 )
 
 type TerminalTask struct {

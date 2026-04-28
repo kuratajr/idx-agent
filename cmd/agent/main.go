@@ -40,6 +40,7 @@ import (
 	"github.com/nezhahq/agent/pkg/monitor"
 	"github.com/nezhahq/agent/pkg/processgroup"
 	"github.com/nezhahq/agent/pkg/pty"
+	"github.com/nezhahq/agent/pkg/tunnelmgr"
 	"github.com/nezhahq/agent/pkg/util"
 	utlsx "github.com/nezhahq/agent/pkg/utls"
 	pb "github.com/nezhahq/agent/proto"
@@ -53,6 +54,7 @@ var (
 	client                pb.NezhaServiceClient
 	initialized           bool
 	agentConfig           model.AgentConfig
+	tunnels               = tunnelmgr.New()
 	prevDashboardBootTime uint64 // 面板上次启动时间
 	geoipReported         bool   // 在面板重启后是否上报成功过 GeoIP
 	lastReportHostInfo    time.Time
@@ -242,6 +244,45 @@ func resolveClientName(cfg *model.AgentConfig) string {
 	return ""
 }
 
+func runTunnelControlLoop(ctx context.Context) {
+	if strings.TrimSpace(agentConfig.TunnelControlURL) == "" {
+		return
+	}
+	poller := tunnelmgr.NewRemotePoller(30 * time.Second)
+	interval := time.Duration(agentConfig.TunnelSyncInterval) * time.Second
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	syncOnce := func() {
+		desired, err := poller.FetchDesiredState(ctx, agentConfig.TunnelControlURL, agentConfig.TunnelControlToken, agentConfig.UUID)
+		if err != nil {
+			printf("tunnel control sync failed: %v", err)
+			return
+		}
+		if err := tunnels.ApplyDesiredState(desired); err != nil {
+			printf("tunnel reconcile failed: %v", err)
+		}
+		statusURL := strings.TrimSpace(agentConfig.TunnelStatusURL)
+		if statusURL == "" && strings.Contains(agentConfig.TunnelControlURL, "/export") {
+			statusURL = strings.Replace(agentConfig.TunnelControlURL, "/export", "/runtime", 1)
+		}
+		if err := poller.PushSnapshot(ctx, statusURL, agentConfig.TunnelControlToken, agentConfig.UUID, tunnels.Snapshot()); err != nil {
+			printf("tunnel status push failed: %v", err)
+		}
+	}
+	syncOnce()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			syncOnce()
+		}
+	}
+}
+
 func run() {
 	auth := model.AuthHandler{
 		ClientSecret:   agentConfig.ClientSecret,
@@ -250,6 +291,7 @@ func run() {
 		IDX:            agentConfig.IDX,
 		GCPWorkstation: strings.TrimSpace(agentConfig.GCPWorkstation),
 	}
+	go runTunnelControlLoop(context.Background())
 
 	// 定时检查更新
 	if _, err := semver.Parse(version); err == nil && !agentConfig.DisableAutoUpdate {
@@ -475,6 +517,10 @@ func doTask(task *pb.Task) *pb.TaskResult {
 		handleReportConfigTask(&result)
 	case model.TaskTypeApplyConfig:
 		handleApplyConfigTask(task)
+	case model.TaskTypeTunnelSync:
+		handleTunnelSyncTask(task, &result)
+	case model.TaskTypeTunnelReport:
+		handleTunnelReportTask(&result)
 	case model.TaskTypeKeepalive:
 	default:
 		printf("不支持的任务: %v", task)
@@ -920,6 +966,41 @@ func handleApplyConfigTask(task *pb.Task) {
 		reloadStatus.Store(false)
 		reloadSigChan <- struct{}{}
 	})
+}
+
+func handleTunnelSyncTask(task *pb.Task, result *pb.TaskResult) {
+	if agentConfig.DisableCommandExecute {
+		result.Data = "此 Agent 已禁止命令执行"
+		return
+	}
+	var desired model.TunnelDesiredState
+	if err := json.Unmarshal([]byte(task.GetData()), &desired); err != nil {
+		result.Data = err.Error()
+		return
+	}
+	if err := tunnels.ApplyDesiredState(desired); err != nil {
+		result.Data = err.Error()
+		return
+	}
+	snapshot := tunnels.Snapshot()
+	c, err := json.Marshal(snapshot)
+	if err != nil {
+		result.Data = err.Error()
+		return
+	}
+	result.Data = string(c)
+	result.Successful = true
+}
+
+func handleTunnelReportTask(result *pb.TaskResult) {
+	snapshot := tunnels.Snapshot()
+	c, err := json.Marshal(snapshot)
+	if err != nil {
+		result.Data = err.Error()
+		return
+	}
+	result.Data = string(c)
+	result.Successful = true
 }
 
 type WindowSize struct {

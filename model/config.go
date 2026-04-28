@@ -50,6 +50,10 @@ type AgentConfig struct {
 	IPReportPeriod              uint32          `koanf:"ip_report_period" json:"ip_report_period"`               // IP上报周期
 	SelfUpdatePeriod            uint32          `koanf:"self_update_period" json:"self_update_period"`           // 自动更新周期
 	CustomIPApi                 []string        `koanf:"custom_ip_api" json:"custom_ip_api,omitempty"`           // 自定义 IP API                      // 重载间隔
+	TunnelControlURL            string          `koanf:"tunnel_control_url" json:"tunnel_control_url,omitempty"`
+	TunnelControlToken          string          `koanf:"tunnel_control_token" json:"tunnel_control_token,omitempty"`
+	TunnelStatusURL             string          `koanf:"tunnel_status_url" json:"tunnel_status_url,omitempty"`
+	TunnelSyncInterval          uint32          `koanf:"tunnel_sync_interval" json:"tunnel_sync_interval,omitempty"`
 
 	k        *koanf.Koanf `json:"-"`
 	filePath string       `json:"-"`
@@ -164,6 +168,12 @@ func ValidateConfig(c *AgentConfig, isRemoteEdit bool) error {
 		c.IPReportPeriod = 1800
 	} else if c.IPReportPeriod < 30 {
 		c.IPReportPeriod = 30
+	}
+
+	if c.TunnelSyncInterval == 0 {
+		c.TunnelSyncInterval = 30
+	} else if c.TunnelSyncInterval < 10 {
+		c.TunnelSyncInterval = 10
 	}
 
 	if c.ReportDelay < 1 || c.ReportDelay > 4 {
